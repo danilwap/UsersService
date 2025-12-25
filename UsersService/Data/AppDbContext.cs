@@ -10,6 +10,8 @@ public class AppDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<UserChange> UserChanges => Set<UserChange>();
 
+    public DbSet<Order> Orders => Set<Order>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<User>()
@@ -19,6 +21,8 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<UserChange>()
             .HasIndex(c => c.UserId);
 
+        modelBuilder.Entity<Order>()
+            .HasIndex(c => c.UserId);
 
         base.OnModelCreating(modelBuilder);
     }
