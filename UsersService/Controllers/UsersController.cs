@@ -1,12 +1,12 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using UsersService.Data;
-using UsersService.Models;
 using Npgsql;
-
-using UsersService.Dtos;
 using System.Text.Json;
 
+
+using UsersService.Data;
+using UsersService.Models;
+using UsersService.Dtos;
 
 
 
@@ -35,30 +35,48 @@ public class UsersController : ControllerBase
 
     // POST: api/users
     [HttpPost]
-    public async Task<ActionResult<User>> Create(User user)
+    public async Task<ActionResult<User>> Create(CreateUserRequest request)
     {
-        user.Id = Guid.NewGuid();
-        user.CreatedAtUtc = DateTime.UtcNow;
-        user.UpdatedAtUtc = DateTime.UtcNow;
-
-        _db.Users.Add(user);
-
-        try
-        {
-            // 1️. Сохраняем пользователя
-            await _db.SaveChangesAsync();
-        }
-        catch (DbUpdateException ex) when (ex.InnerException is PostgresException pgEx && pgEx.SqlState == "23505")
+        // быстрая проверка уникальности (для понятного ответа)
+        var exists = await _db.Users.AnyAsync(u => u.Email == request.Email);
+        if (exists)
         {
             return Conflict(new
             {
                 message = "Пользователь с таким email уже существует.",
                 field = "email",
-                value = user.Email
+                value = request.Email
             });
         }
 
-        // 2️⃣ Пишем историю ТОЛЬКО если пользователь реально создан
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            Email = request.Email,
+            FirstName = request.FirstName,
+            LastName = request.LastName,
+            CreatedAtUtc = DateTime.UtcNow,
+            UpdatedAtUtc = DateTime.UtcNow
+        };
+
+        _db.Users.Add(user);
+
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException pgEx && pgEx.SqlState == "23505")
+        {
+            // защита от race condition
+            return Conflict(new
+            {
+                message = "Пользователь с таким email уже существует.",
+                field = "email",
+                value = request.Email
+            });
+        }
+
+        // история создания
         var afterJson = JsonSerializer.Serialize(new
         {
             user.Id,
@@ -76,7 +94,6 @@ public class UsersController : ControllerBase
             AfterJson = afterJson
         });
 
-        // 3️⃣ Сохраняем историю
         await _db.SaveChangesAsync();
 
         return CreatedAtAction(nameof(GetById), new { id = user.Id }, user);
@@ -180,4 +197,40 @@ public class UsersController : ControllerBase
         await _db.SaveChangesAsync();
         return NoContent();
     }
+
+    // GET: api/users/{id}/history?take=50&skip=0
+    [HttpGet("{id:guid}/history")]
+    public async Task<ActionResult<List<UserChangeDto>>> GetHistory(
+        Guid id,
+        [FromQuery] int take = 50,
+        [FromQuery] int skip = 0)
+    {
+        // защита от странных значений
+        if (take <= 0) take = 50;
+        if (take > 200) take = 200;
+        if (skip < 0) skip = 0;
+
+        var history = await _db.UserChanges
+            .AsNoTracking()
+            .Where(x => x.UserId == id)
+            .OrderByDescending(x => x.ChangedAtUtc)
+            .Skip(skip)
+            .Take(take)
+            .Select(x => new UserChangeDto
+            {
+                Id = x.Id,
+                UserId = x.UserId,
+                ChangedAtUtc = x.ChangedAtUtc,
+                ChangeType = x.ChangeType.ToString(),
+                ChangedBy = x.ChangedBy,
+                BeforeJson = x.BeforeJson,
+                AfterJson = x.AfterJson
+            })
+            .ToListAsync();
+
+        return Ok(history);
+    }
+
+
+
 }
