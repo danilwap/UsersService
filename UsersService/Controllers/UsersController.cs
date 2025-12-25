@@ -2,12 +2,9 @@
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using System.Text.Json;
-
-
 using UsersService.Data;
-using UsersService.Models;
 using UsersService.Dtos;
-
+using UsersService.Models;
 
 
 namespace UsersService.Controllers;
@@ -17,8 +14,14 @@ namespace UsersService.Controllers;
 public class UsersController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly ILogger<UsersController> _logger;
 
-    public UsersController(AppDbContext db) => _db = db;
+    public UsersController(AppDbContext db, ILogger<UsersController> logger)
+    {
+        _db = db;
+        _logger = logger;
+    }
+
 
     // GET: api/users
     [HttpGet]
@@ -37,6 +40,8 @@ public class UsersController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<User>> Create(CreateUserRequest request)
     {
+        _logger.LogInformation("Creating user with email {Email}", request.Email);
+
         // быстрая проверка уникальности (для понятного ответа)
         var exists = await _db.Users.AnyAsync(u => u.Email == request.Email);
         if (exists)
@@ -74,6 +79,8 @@ public class UsersController : ControllerBase
                 field = "email",
                 value = request.Email
             });
+            _logger.LogWarning("Create conflict: email {Email}", request.Email);
+
         }
 
         // история создания
@@ -104,6 +111,7 @@ public class UsersController : ControllerBase
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, UpdateUserRequest request)
     {
+        _logger.LogInformation("Updating user {UserId}", id);
         var user = await _db.Users.FirstOrDefaultAsync(x => x.Id == id);
         if (user is null) return NotFound();
 
@@ -170,6 +178,8 @@ public class UsersController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
+        _logger.LogInformation("Deleting user {UserId}", id);
+
         var user = await _db.Users.FirstOrDefaultAsync(x => x.Id == id);
         if (user is null) return NotFound();
 

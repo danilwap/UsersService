@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 using System;
 using UsersService.Data;
+using Serilog;
 
 
 
@@ -10,6 +11,14 @@ using UsersService.Data;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
+builder.Host.UseSerilog((context, services, configuration) =>
+    configuration.ReadFrom.Configuration(context.Configuration)
+                 .ReadFrom.Services(services)
+                 .Enrich.FromLogContext());
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
 
 builder.Services.AddControllers();
 builder.Services.AddDbContext<AppDbContext>(opt =>
@@ -30,6 +39,8 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
+
+app.UseSerilogRequestLogging();
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
